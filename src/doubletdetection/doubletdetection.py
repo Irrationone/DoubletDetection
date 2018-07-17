@@ -94,6 +94,8 @@ class BoostClassifier:
             seedrandom seed numpy's RNG. NOTE: Phenograph does not currently
             admit a random seed, and so this will not guarantee identical
             results across runs.
+        verbose (bool, optional): Set to False to silence all normal operation
+            informational messages. Defaults to True.
 
     Attributes:
         all_log_p_values_ (ndarray): Hypergeometric test natural log p-value per
@@ -121,13 +123,14 @@ class BoostClassifier:
 
     def __init__(self, boost_rate=0.25, n_components=30, n_top_var_genes=10000, new_lib_as=None,
                  replace=False, phenograph_parameters={'prune': True}, n_iters=25,
-                 normalizer=None, random_state=None):
+                 normalizer=None, random_state=None, verbose=True):
         self.boost_rate = boost_rate
         self.new_lib_as = new_lib_as
         self.replace = replace
         self.n_iters = n_iters
         self.normalizer = normalizer
         self.random_state = random_state
+        self.verbose = verbose
 
         if self.random_state:
             np.random.seed(self.random_state)
@@ -199,7 +202,8 @@ class BoostClassifier:
         all_synth_communities = np.zeros((self.n_iters, int(self.boost_rate * self._num_cells)))
 
         for i in range(self.n_iters):
-            print("Iteration {:3}/{}".format(i + 1, self.n_iters))
+            if self.verbose:
+                print("Iteration {:3}/{}".format(i + 1, self.n_iters))
             self.all_scores_[i], self.all_log_p_values_[i] = self._one_fit()
             all_communities[i] = self.communities_
             all_parents.append(self.parents_)
@@ -260,11 +264,13 @@ class BoostClassifier:
         return self.labels_
 
     def _one_fit(self):
-        print("\nCreating synthetic doublets...")
+        if self.verbose:
+            print("\nCreating synthetic doublets...")
         self._createDoublets()
 
         # Normalize combined augmented set
-        print("Normalizing...")
+        if self.verbose:
+            print("Normalizing...")
         if self.normalizer is not None:
             aug_counts = self.normalizer(np.append(self._raw_counts, self._raw_synthetics, axis=0))
         else:
@@ -278,20 +284,22 @@ class BoostClassifier:
         self._norm_counts = aug_counts[:self._num_cells]
         self._synthetics = aug_counts[self._num_cells:]
 
-        print("Running PCA...")
+        if self.verbose:
+                print("Running PCA...")
         # Get phenograph results
         pca = PCA(n_components=self.n_components, random_state=self.random_state)
         reduced_counts = pca.fit_transform(aug_counts)
-        print("Clustering augmented data set with Phenograph...\n")
+        if self.verbose:
+            print("Clustering augmented data set with Phenograph...\n")
         fullcommunities, _, _ = phenograph.cluster(reduced_counts, **self.phenograph_parameters)
         min_ID = min(fullcommunities)
         self.communities_ = fullcommunities[:self._num_cells]
         self.synth_communities_ = fullcommunities[self._num_cells:]
         community_sizes = [np.count_nonzero(fullcommunities == i)
                            for i in np.unique(fullcommunities)]
-        print("Found communities [{0}, ... {2}], with sizes: {1}\n".format(min(fullcommunities),
-                                                                           community_sizes,
-                                                                           max(fullcommunities)))
+        if self.verbose:
+            print("Found communities [{0}, ... {2}], with sizes: {1}\n".format(
+                min(fullcommunities), community_sizes, max(fullcommunities)))
 
         # Count number of fake doublets in each community and assign score
         # Number of synth/orig cells in each cluster.
